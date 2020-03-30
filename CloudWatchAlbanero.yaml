@@ -1,0 +1,86 @@
+# YAML Cloudwatch file for Albanero test
+# I've created a series of Metrics and Alarms based on the excerpts from the log entries provided. Please see the comments. All 3 metrics use a metric that
+# is found by parsing the log entry. 
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Sample template for Albanero Test
+# Created a parameter for the name of the Log Group where these messages are being sent. Provided this since it wasn't given. Made an assumption that
+# there was a LogGroup and it was named. Otherwise this stack will look for the default name.
+Parameters:
+  LogGroupName :
+    Type: String
+    Default: "CloudTrail/DefaultLogGroup"
+    Description: "Enter the Log Group Name for the CloudWatch. If no name will use CloudTrail/DefaultLogGroup"
+Resources:
+  # A General Errors filter. This filter is just to collect any ERROR that appears in the log entries. Errors are generally bad so we want to make sure 
+  # we are notified when one appears in the log.
+  GeneralErrorFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: "LogGroupName"
+      FilterPattern: "ERROR"
+      MetricTransformations: 
+        MetricNamespace: "CloudTrailMetrics"
+        MetricName: "ErrorCount"
+        MetricValue: 1
+  #The alarm threshold is set very low. We want to ensure we are notified when any are presented in the time period. (5 minutes)
+  GeneralErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: "GeneralErrorAlarm"
+      AlarmDescription: "When there is an error reported in the Log"
+      MetricName: "ErrorCount"
+      MetricNamespace: "CloudTrailMetrics"
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      EvaluationPeriods: "1"
+      Period: "300"
+      Statistic: "Sum"
+      Threashold: "1"
+  # Another filter that is just looking at changes that are happening within the system. Basically any reads, adds or deletes (Didn't see a delete but I assume 
+  # there would be one).
+  ChangesFilter:
+    Properties:
+      LogGroupName:
+        Ref: "LogGroupName"
+      FilterPattern: "?read" "?add" "?delete"
+      MetricTransformations: 
+        MetricNamespace: "CloudTrailMetrics"
+        MetricName: "ChangeMade"
+        MetricValue: 1
+  # This alarm, like the previous one fires if there are 5 or more changes in a given time window. We may be curious about throughput or maybe system integrity, 
+  # scalability. Seeing a log entry where there was a performance alert makes me think there may be scale issues. 
+  ChangesAlarm:
+    Properties:
+      AlarmName: "GeneralChangesAlarm"
+      AlarmDescription: "When there are any changes being made in the system - reads, deletes, edits, etc"
+      MetricName: "ChangeMade"
+      MetricNamespace: "CloudTrailMetrics"
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      EvaluationPeriods: "1"
+      Period: "300"
+      Statistic: "Sum"
+      Threashold: "5"
+  # This final filter is based on the redirect POST in the log files. Not sure what is going on there - but a POST call that is redirected seems fishy. I would 
+  # to know when a POST is being redirected. Could be a security risk or could be part of the system design. Just thought it should be monitored.
+  RedirectFilter:
+    Properties:
+      LogGroupName:
+        Ref: "LogGroupName"
+      FilterPattern: "[..., request=*POST*, status_code=302,]"
+      MetricTransformations: 
+        MetricNamespace: "CloudTrailMetrics"
+        MetricName: "RedirectOnPost"
+        MetricValue: 1
+  # This alarm fires when a POST and a redirect are ever in the log file.
+  RedirectPostAlarm:
+    Properties:
+      AlarmName: "RedirectOnPostAlarm"
+      AlarmDescription: "When a POST is being made and the request is being redirected."
+      MetricName: "RedirectOnPost"
+      MetricNamespace: "CloudTrailMetrics"
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      EvaluationPeriods: "1"
+      Period: "300"
+      Statistic: "Sum"
+      Threashold: "1"
